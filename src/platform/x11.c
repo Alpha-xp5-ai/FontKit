@@ -1,0 +1,213 @@
+/* ============================================================================
+ * src/platform/x11.c - X11/Linux Platform Implementation
+ * ========================================================================== */
+#ifdef __linux__
+
+#include "platform.h"
+#include "utils/memory.h"
+#include "utils/utf8.h"
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <string.h>
+#include <stdlib.h>
+
+struct FK_Surface {
+    Display *display;
+    Window window;
+    GC gc;
+    XImage *image;
+    uint32_t *pixels;
+    int width;
+    int height;
+    int should_close;
+    Atom wm_delete_window;
+};
+
+FK_Error fk_platform_init(void) {
+    /* X11 doesn't require global initialization */
+    return FK_OK;
+}
+
+void fk_platform_shutdown(void) {
+    /* X11 cleanup handled per-surface */
+}
+
+FK_Surface* fk_surface_create(int width, int height, const char *title) {
+    FK_Surface *surface = fk_calloc(1, sizeof(FK_Surface));
+    if (!surface) return NULL;
+    
+    surface->width = width;
+    surface->height = height;
+    surface->should_close = 0;
+    
+    /* Open display */
+    surface->display = XOpenDisplay(NULL);
+    if (!surface->display) {
+        fk_free(surface);
+        return NULL;
+    }
+    
+    int screen = DefaultScreen(surface->display);
+    
+    /* Create window */
+    surface->window = XCreateSimpleWindow(
+        surface->display,
+        RootWindow(surface->display, screen),
+        0, 0, width, height, 1,
+        BlackPixel(surface->display, screen),
+        WhitePixel(surface->display, screen)
+    );
+    
+    /* Set window title */
+    XStoreName(surface->display, surface->window, title);
+    
+    /* Enable close button */
+    surface->wm_delete_window = XInternAtom(surface->display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(surface->display, surface->window, &surface->wm_delete_window, 1);
+    
+    /* Select events */
+    XSelectInput(surface->display, surface->window, ExposureMask | KeyPressMask | StructureNotifyMask);
+    
+    /* Create graphics context */
+    surface->gc = XCreateGC(surface->display, surface->window, 0, NULL);
+    
+    /* Allocate pixel buffer */
+    surface->pixels = fk_calloc(width * height, sizeof(uint32_t));
+    
+    /* Create XImage */
+    Visual *visual = DefaultVisual(surface->display, screen);
+    int depth = DefaultDepth(surface->display, screen);
+    
+    surface->image = XCreateImage(
+        surface->display, visual, depth, ZPixmap, 0,
+        (char*)surface->pixels, width, height, 32, 0
+    );
+    
+    /* Show window */
+    XMapWindow(surface->display, surface->window);
+    XFlush(surface->display);
+    
+    return surface;
+}
+
+void fk_surface_destroy(FK_Surface *surface) {
+    if (!surface) return;
+    
+    if (surface->image) {
+        surface->image->data = NULL;  /* Don't let XDestroyImage free our buffer */
+        XDestroyImage(surface->image);
+    }
+    if (surface->pixels) fk_free(surface->pixels);
+    if (surface->gc) XFreeGC(surface->display, surface->gc);
+    if (surface->window) XDestroyWindow(surface->display, surface->window);
+    if (surface->display) XCloseDisplay(surface->display);
+    
+    fk_free(surface);
+}
+
+void fk_surface_present(FK_Surface *surface) {
+    if (!surface || !surface->image) return;
+    
+    XPutImage(surface->display, surface->window, surface->gc, surface->image,
+              0, 0, 0, 0, surface->width, surface->height);
+    XFlush(surface->display);
+}
+
+void fk_surface_clear(FK_Surface *surface, uint32_t color) {
+    if (!surface || !surface->pixels) return;
+    
+    for (int i = 0; i < surface->width * surface->height; i++) {
+        surface->pixels[i] = color;
+    }
+}
+
+void fk_surface_draw_glyph(FK_Surface *surface, const FK_Glyph *glyph,
+                           int x, int y, uint32_t color) {
+    if (!surface || !glyph) return;
+    
+    FK_Bitmap bmp;
+    if (fk_get_glyph_bitmap(glyph, &bmp) != FK_OK) return;
+    
+    uint8_t r = (color >> 16) & 0xFF;
+    uint8_t g = (color >> 8) & 0xFF;
+    uint8_t b = color & 0xFF;
+    
+    for (int gy = 0; gy < bmp.height; gy++) {
+        for (int gx = 0; gx < bmp.width; gx++) {
+            int px = x + gx;
+            int py = y + gy;
+            
+            if (px >= 0 && px < surface->width && py >= 0 && py < surface->height) {
+                uint8_t alpha = bmp.pixels[gy * bmp.pitch + gx];
+                uint32_t *pixel = &surface->pixels[py * surface->width + px];
+                
+                /* Alpha blend */
+                uint8_t bg_r = (*pixel >> 16) & 0xFF;
+                uint8_t bg_g = (*pixel >> 8) & 0xFF;
+                uint8_t bg_b = *pixel & 0xFF;
+                
+                uint8_t out_r = ((r * alpha) + (bg_r * (255 - alpha))) / 255;
+                uint8_t out_g = ((g * alpha) + (bg_g * (255 - alpha))) / 255;
+                uint8_t out_b = ((b * alpha) + (bg_b * (255 - alpha))) / 255;
+                
+                *pixel = (out_r << 16) | (out_g << 8) | out_b;
+            }
+        }
+    }
+}
+
+void fk_surface_draw_text(FK_Surface *surface, FK_Font *font,
+                         const char *text, int x, int y, uint32_t color) {
+    if (!surface || !font || !text) return;
+    
+    int cursor_x = x;
+    const char *p = text;
+    
+    while (*p) {
+        uint32_t cp = fk_utf8_decode(&p);
+        if (cp == 0) break;
+        
+        FK_Glyph *glyph = fk_render_glyph(font, cp, NULL);
+        if (glyph) {
+            fk_surface_draw_glyph(surface, glyph, cursor_x, y, color);
+            
+            FK_GlyphMetrics metrics;
+            fk_get_glyph_metrics(glyph, &metrics);
+            cursor_x += metrics.advance;
+            
+            fk_free_glyph(glyph);
+        }
+    }
+}
+
+int fk_surface_should_close(FK_Surface *surface) {
+    return surface ? surface->should_close : 1;
+}
+
+void fk_surface_poll_events(void) {
+    /* Event polling handled per-display in main loop */
+}
+
+/* Helper to poll events for a specific surface */
+void fk_surface_poll_events_x11(FK_Surface *surface) {
+    if (!surface) return;
+    
+    XEvent event;
+    while (XPending(surface->display)) {
+        XNextEvent(surface->display, &event);
+        
+        switch (event.type) {
+            case ClientMessage:
+                if ((Atom)event.xclient.data.l[0] == surface->wm_delete_window) {
+                    surface->should_close = 1;
+                }
+                break;
+                
+            case Expose:
+                fk_surface_present(surface);
+                break;
+        }
+    }
+}
+
+#endif /* __linux__ */
