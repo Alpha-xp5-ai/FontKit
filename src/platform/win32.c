@@ -4,7 +4,7 @@
 #ifdef _WIN32
 
 #include "platform.h"
-#include "../utils/memory.h"
+#include "utils/memory.h"
 #include <windows.h>
 #include <string.h>
 
@@ -202,4 +202,3 @@ void fk_surface_poll_events(void) {
 }
 
 #endif /* _WIN32 */
-

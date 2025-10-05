@@ -1,3 +1,4 @@
+
 /* ============================================================================
  * src/core/fontkit_core.h - Internal Core Header
  * ========================================================================== */
@@ -6,7 +7,6 @@
 
 #include "fontkit_types.h"
 
-/* Core functions visible to other internal modules */
-void fk_set_error(FK_Error error);
+/* No internal functions needed - error handling is in fontkit_core.c */
 
 #endif /* FONTKIT_CORE_H */

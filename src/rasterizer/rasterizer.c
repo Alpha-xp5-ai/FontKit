@@ -10,6 +10,8 @@
 #include <math.h>
 #include <string.h>
 
+
+
 #define MAX_SCANLINES 2048
 #define FIXED_SHIFT 16
 #define FIXED_ONE (1 << FIXED_SHIFT)
