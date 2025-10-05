@@ -89,4 +89,56 @@ int main(int argc, char **argv) {
         fk_free_glyph(glyph_italic);
     }
     
+    /* Demo 4: Render bold+italic */
+    printf("Demo 4: Rendering character 'A' (bold+italic)\n");
+    FK_RenderOptions opts_both = opts_normal;
+    opts_both.style = FK_STYLE_BOLD | FK_STYLE_ITALIC;
+    
+    FK_Glyph *glyph_both = fk_render_glyph(font, 'A', &opts_both);
+    if (glyph_both) {
+        fk_export_glyph_ppm(glyph_both, "output_bold_italic.ppm");
+        printf("  Saved: output_bold_italic.ppm\n");
+        fk_free_glyph(glyph_both);
+    }
+    
+    /* Demo 5: Color examples */
+    printf("\nDemo 5: Color utilities\n");
+    FK_Color red = fk_color_rgb(255, 0, 0);
+    FK_Color blue = fk_color_from_hex("#0000FF");
+    FK_Color green = fk_color_from_hex("00FF00");
+    
+    printf("  Red:   0x%08X\n", fk_color_to_u32(red));
+    printf("  Blue:  0x%08X\n", fk_color_to_u32(blue));
+    printf("  Green: 0x%08X\n", fk_color_to_u32(green));
+    
+    /* Demo 6: Text measurement */
+    printf("\nDemo 6: Text measurement\n");
+    int text_width, text_height;
+    if (fk_measure_text(font, text_to_render, &text_width, &text_height) == FK_OK) {
+        printf("  Text \"%s\" dimensions: %dx%d\n", text_to_render, text_width, text_height);
+    }
+    
+    /* Demo 7: Font styles */
+    printf("\nDemo 7: Font style control\n");
+    fk_set_font_style(font, FK_STYLE_BOLD);
+    printf("  Current style: %s\n", 
+           (fk_get_font_style(font) & FK_STYLE_BOLD) ? "BOLD" : "NORMAL");
+    
+    fk_set_font_style(font, FK_STYLE_NORMAL);
+    
+    /* Cleanup */
+    printf("\nCleaning up...\n");
+    fk_free_font(font);
+    fk_shutdown();
+    
+    printf("✓ Demo complete!\n");
+    printf("\nGenerated files:\n");
+    printf("  - output_normal.ppm\n");
+    printf("  - output_bold.ppm\n");
+    printf("  - output_italic.ppm\n");
+    printf("  - output_bold_italic.ppm\n");
+    printf("\nOpen these files with an image viewer that supports PPM format.\n");
+    
+    return 0;
 }
+
