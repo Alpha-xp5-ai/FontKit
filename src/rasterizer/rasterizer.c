@@ -5,12 +5,11 @@
 
 #include "rasterizer.h"
 #include "bezier.h"
-#include "fontkit_types.h"
-#include "memory.h"
+#include "core/fontkit_types.h"
+#include "utils/memory.h"
 #include <math.h>
 #include <string.h>
-
-
+#include <stdlib.h>
 
 #define MAX_SCANLINES 2048
 #define FIXED_SHIFT 16
@@ -98,7 +97,7 @@ static int edge_compare(const void *a, const void *b) {
     return ea->x - eb->x;
 }
 
-static void rasterize_scanline(FK_Rasterizer *rast, int y, 
+static void rasterize_scanline(FK_Rasterizer *rast, 
                                Edge *active_edges, int num_active) {
     if (num_active == 0) return;
     
@@ -303,13 +302,27 @@ FK_Error fk_rasterizer_render(FK_Rasterizer *rast, const FK_Outline *outline,
     bitmap->pixels = fk_calloc(width * height, 1);
     
     if (!bitmap->pixels) {
+        /* Cleanup copied outline */
+        if (glyph_outline.contours) {
+            for (int c = 0; c < glyph_outline.contour_count; c++) {
+                fk_free(glyph_outline.contours[c].points);
+            }
+            fk_free(glyph_outline.contours);
+        }
         return FK_ERROR_OUT_OF_MEMORY;
     }
     
     /* Process outline to edges */
-    FK_Error err = process_outline(rast, &glyph->outline, opts);
+    FK_Error err = process_outline(rast, &glyph_outline, opts);
     if (err != FK_OK) {
         fk_free(bitmap->pixels);
+        /* Cleanup copied outline */
+        if (glyph_outline.contours) {
+            for (int c = 0; c < glyph_outline.contour_count; c++) {
+                fk_free(glyph_outline.contours[c].points);
+            }
+            fk_free(glyph_outline.contours);
+        }
         return err;
     }
     
@@ -317,6 +330,13 @@ FK_Error fk_rasterizer_render(FK_Rasterizer *rast, const FK_Outline *outline,
     uint8_t *temp_buffer = fk_calloc(render_width * render_height, 1);
     if (!temp_buffer) {
         fk_free(bitmap->pixels);
+        /* Cleanup copied outline */
+        if (glyph_outline.contours) {
+            for (int c = 0; c < glyph_outline.contour_count; c++) {
+                fk_free(glyph_outline.contours[c].points);
+            }
+            fk_free(glyph_outline.contours);
+        }
         return FK_ERROR_OUT_OF_MEMORY;
     }
     
@@ -337,7 +357,7 @@ FK_Error fk_rasterizer_render(FK_Rasterizer *rast, const FK_Outline *outline,
         }
         
         /* Rasterize this scanline */
-        rasterize_scanline(rast, y, active_edges, num_active);
+        rasterize_scanline(rast, active_edges, num_active);
         
         /* Copy scanline to temp buffer */
         for (int x = 0; x < render_width; x++) {

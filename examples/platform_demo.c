@@ -7,123 +7,240 @@
 #include <FontKit.h>
 #include <stdio.h>
 #include <stdlib.h>
+// #include <unistd.h>
 
-/* Include platform header */
-#ifdef _WIN32
-    #include "../src/platform/platform.h"
-#elif defined(__linux__)
-    #include "../src/platform/platform.h"
-    /* Forward declare X11-specific function */
-    extern void fk_surface_poll_events_x11(FK_Surface *surface);
-#endif
+#ifdef __linux__
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 int main(int argc, char **argv) {
     const char *font_path = FK_FONT_FAMILY_PRIMARY;
-    int font_size = 32;
     
-    if (argc > 1) font_path = argv[1];
-    if (argc > 2) font_size = atoi(argv[2]);
+    printf("╔════════════════════════════════════════╗\n");
+    printf("║   FontKit X11 Window Demo             ║\n");
+    printf("╚════════════════════════════════════════╝\n\n");
     
-    printf("FontKit Platform Demo\n");
-    printf("=====================\n\n");
-    
-    /* Initialize FontKit */
+    // Initialize FontKit
+    printf("Init FontKit... ");
+    fflush(stdout);
     if (fk_init() != FK_OK) {
-        fprintf(stderr, "Failed to initialize FontKit\n");
+        printf("FAILED\n");
         return 1;
     }
+    printf("OK\n");
     
-    /* Initialize platform */
-    if (fk_platform_init() != FK_OK) {
-        fprintf(stderr, "Failed to initialize platform\n");
-        fk_shutdown();
-        return 1;
-    }
-    
-    /* Load font */
-    printf("Loading font: %s\n", font_path);
-    FK_Font *font = fk_load_font(font_path, font_size);
-    
+    // Load font
+    printf("Load font... ");
+    fflush(stdout);
+    FK_Font *font = fk_load_font(font_path, 48);
     if (!font) {
-        fprintf(stderr, "Failed to load font: %s\n", fk_error_string(fk_get_last_error()));
-        fk_platform_shutdown();
+        printf("FAILED: %s\n", fk_error_string(fk_get_last_error()));
         fk_shutdown();
         return 1;
     }
+    printf("OK\n");
     
-    /* Create window */
-    FK_Surface *surface = fk_surface_create(800, 600, "FontKit Demo");
-    if (!surface) {
-        fprintf(stderr, "Failed to create surface\n");
+    // Open X11 display
+    printf("Open X11... ");
+    fflush(stdout);
+    Display *display = XOpenDisplay(NULL);
+    if (!display) {
+        printf("FAILED - Check DISPLAY variable\n");
         fk_free_font(font);
-        fk_platform_shutdown();
         fk_shutdown();
         return 1;
     }
+    printf("OK\n");
     
-    printf("Window created. Close window to exit.\n\n");
+    int screen = DefaultScreen(display);
     
-    /* Main loop */
-    while (!fk_surface_should_close(surface)) {
-        /* Clear background */
-        fk_surface_clear(surface, 0xFFFFFF);  /* White */
+    // Create window
+    Window window = XCreateSimpleWindow(
+        display,
+        RootWindow(display, screen),
+        100, 100, 800, 600, 2,
+        BlackPixel(display, screen),
+        WhitePixel(display, screen)
+    );
+    
+    XStoreName(display, window, "FontKit Demo");
+    XSelectInput(display, window, ExposureMask | KeyPressMask);
+    
+    GC gc = XCreateGC(display, window, 0, NULL);
+    XSetForeground(display, gc, BlackPixel(display, screen));
+    
+    // Load X11 font for debug text
+    XFontStruct *xfont = XLoadQueryFont(display, "fixed");
+    if (xfont) {
+        XSetFont(display, gc, xfont->fid);
+    }
+    
+    XMapWindow(display, window);
+    XFlush(display);
+    
+    printf("\n✓ Window opened!\n");
+    printf("✓ Rendering glyphs...\n\n");
+    
+    // Prepare to render FontKit glyphs
+    FK_RenderOptions opts = {
+        .quality = FK_QUALITY_HIGH,
+        .hinting = FK_HINT_NORMAL,
+        .gamma = 1.8f,
+        .style = FK_STYLE_NORMAL,
+        .color = FK_COLOR_BLACK
+    };
+    
+    XEvent event;
+    int running = 1;
+    int rendered = 0;
+    
+    while (running) {
+        XNextEvent(display, &event);
         
-        /* Draw title */
-        fk_surface_draw_text(surface, font, "FontKit Demo", 20, 20, 0x000000);
-        
-        /* Draw normal text */
-        fk_set_font_style(font, FK_STYLE_NORMAL);
-        fk_surface_draw_text(surface, font, "Normal Text", 20, 80, 0x000000);
-        
-        /* Draw bold text */
-        fk_set_font_style(font, FK_STYLE_BOLD);
-        fk_surface_draw_text(surface, font, "Bold Text", 20, 140, 0xFF0000);
-        
-        /* Draw italic text */
-        fk_set_font_style(font, FK_STYLE_ITALIC);
-        fk_surface_draw_text(surface, font, "Italic Text", 20, 200, 0x0000FF);
-        
-        /* Draw bold+italic */
-        fk_set_font_style(font, FK_STYLE_BOLD | FK_STYLE_ITALIC);
-        fk_surface_draw_text(surface, font, "Bold Italic", 20, 260, 0x00AA00);
-        
-        /* Colored text samples */
-        fk_set_font_style(font, FK_STYLE_NORMAL);
-        fk_surface_draw_text(surface, font, "Color: Red", 400, 80, 0xFF0000);
-        fk_surface_draw_text(surface, font, "Color: Green", 400, 140, 0x00FF00);
-        fk_surface_draw_text(surface, font, "Color: Blue", 400, 200, 0x0000FF);
-        fk_surface_draw_text(surface, font, "Color: Cyan", 400, 260, 0x00FFFF);
-        fk_surface_draw_text(surface, font, "Color: Magenta", 400, 320, 0xFF00FF);
-        fk_surface_draw_text(surface, font, "Color: Yellow", 400, 380, 0xFFFF00);
-        
-        /* Display info */
-        FK_Font *small_font = fk_load_font(font_path, 16);
-        if (small_font) {
-            char info[256];
-            snprintf(info, sizeof(info), "FontKit v%s | Font: %s", 
-                     fk_version(), font_path);
-            fk_surface_draw_text(surface, small_font, info, 20, 550, 0x808080);
-            fk_free_font(small_font);
+        if (event.type == Expose && !rendered) {
+            // Clear window
+            XClearWindow(display, window);
+            
+            // Draw debug text with X11 font
+            XDrawString(display, window, gc, 20, 30, 
+                "FontKit Demo - Ubuntu Window", 28);
+            XDrawString(display, window, gc, 20, 50,
+                "=================================", 33);
+            
+            // Render FontKit glyph 'A'
+            printf("Rendering 'A'...\n");
+            FK_Glyph *glyph = fk_render_glyph(font, 'A', &opts);
+            
+            if (glyph) {
+                FK_Bitmap bmp;
+                if (fk_get_glyph_bitmap(glyph, &bmp) == FK_OK) {
+                    printf("  Bitmap: %dx%d pixels\n", bmp.width, bmp.height);
+                    
+                    // Draw glyph pixel by pixel
+                    int start_x = 100;
+                    int start_y = 100;
+                    
+                    for (int y = 0; y < bmp.height; y++) {
+                        for (int x = 0; x < bmp.width; x++) {
+                            uint8_t alpha = bmp.pixels[y * bmp.pitch + x];
+                            
+                            // Draw if pixel is visible
+                            if (alpha > 128) {
+                                XDrawPoint(display, window, gc, 
+                                          start_x + x, start_y + y);
+                            }
+                        }
+                    }
+                    
+                    // Draw label
+                    XDrawString(display, window, gc, start_x, start_y - 10,
+                        "Letter 'A' from FontKit:", 24);
+                    
+                    printf("  ✓ Rendered at (%d, %d)\n", start_x, start_y);
+                } else {
+                    printf("  Failed to get bitmap\n");
+                }
+                
+                fk_free_glyph(glyph);
+            } else {
+                printf("  Failed to render glyph\n");
+            }
+            
+            // Render 'B' in bold
+            printf("Rendering 'B' (bold)...\n");
+            opts.style = FK_STYLE_BOLD;
+            glyph = fk_render_glyph(font, 'B', &opts);
+            
+            if (glyph) {
+                FK_Bitmap bmp;
+                if (fk_get_glyph_bitmap(glyph, &bmp) == FK_OK) {
+                    int start_x = 250;
+                    int start_y = 100;
+                    
+                    for (int y = 0; y < bmp.height; y++) {
+                        for (int x = 0; x < bmp.width; x++) {
+                            uint8_t alpha = bmp.pixels[y * bmp.pitch + x];
+                            if (alpha > 128) {
+                                XDrawPoint(display, window, gc, 
+                                          start_x + x, start_y + y);
+                            }
+                        }
+                    }
+                    
+                    XDrawString(display, window, gc, start_x, start_y - 10,
+                        "Letter 'B' (Bold):", 18);
+                    
+                    printf("  ✓ Rendered at (%d, %d)\n", start_x, start_y);
+                }
+                fk_free_glyph(glyph);
+            }
+            
+            // Render 'C' in italic
+            printf("Rendering 'C' (italic)...\n");
+            opts.style = FK_STYLE_ITALIC;
+            glyph = fk_render_glyph(font, 'C', &opts);
+            
+            if (glyph) {
+                FK_Bitmap bmp;
+                if (fk_get_glyph_bitmap(glyph, &bmp) == FK_OK) {
+                    int start_x = 400;
+                    int start_y = 100;
+                    
+                    // Use red color
+                    XSetForeground(display, gc, 0xFF0000);
+                    
+                    for (int y = 0; y < bmp.height; y++) {
+                        for (int x = 0; x < bmp.width; x++) {
+                            uint8_t alpha = bmp.pixels[y * bmp.pitch + x];
+                            if (alpha > 128) {
+                                XDrawPoint(display, window, gc, 
+                                          start_x + x, start_y + y);
+                            }
+                        }
+                    }
+                    
+                    XSetForeground(display, gc, BlackPixel(display, screen));
+                    XDrawString(display, window, gc, start_x, start_y - 10,
+                        "Letter 'C' (Italic):", 20);
+                    
+                    printf("  ✓ Rendered at (%d, %d)\n", start_x, start_y);
+                }
+                fk_free_glyph(glyph);
+            }
+            
+            // Instructions
+            XDrawString(display, window, gc, 20, 550,
+                "Press any key to exit", 21);
+            
+            XFlush(display);
+            rendered = 1;
+            
+            printf("\n✓ All glyphs rendered!\n");
+            printf("✓ Press any key in window to exit\n");
         }
         
-        /* Present */
-        fk_surface_present(surface);
-        
-        /* Poll events */
-#ifdef __linux__
-        fk_surface_poll_events_x11(surface);
-#else
-        fk_surface_poll_events();
-#endif
+        if (event.type == KeyPress) {
+            printf("Exiting...\n");
+            running = 0;
+        }
     }
     
-    /* Cleanup */
-    fk_surface_destroy(surface);
+    // Cleanup
+    XFreeGC(display, gc);
+    XDestroyWindow(display, window);
+    XCloseDisplay(display);
+    
     fk_free_font(font);
-    fk_platform_shutdown();
     fk_shutdown();
     
-    printf("Demo complete!\n");
+    printf("✓ Done!\n");
     
     return 0;
 }
+
+#else
+int main() {
+    printf("This requires Linux/X11\n");
+    return 1;
+}
+#endif

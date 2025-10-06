@@ -25,30 +25,38 @@ CORE_SRC = $(wildcard $(SRC_DIR)/core/*.c)
 LOADER_SRC = $(wildcard $(SRC_DIR)/loaders/*.c)
 RAST_SRC = $(wildcard $(SRC_DIR)/rasterizer/*.c)
 UTIL_SRC = $(wildcard $(SRC_DIR)/utils/*.c)
+PLATFORM_SRC = $(wildcard $(SRC_DIR)/platform/*.c)
 
-ALL_SRC = $(CORE_SRC) $(LOADER_SRC) $(RAST_SRC) $(UTIL_SRC)
+ALL_SRC = $(CORE_SRC) $(LOADER_SRC) $(RAST_SRC) $(UTIL_SRC) $(PLATFORM_SRC)
 
 # Object files
 CORE_OBJ = $(patsubst $(SRC_DIR)/core/%.c,$(OBJ_DIR)/core/%.o,$(CORE_SRC))
 LOADER_OBJ = $(patsubst $(SRC_DIR)/loaders/%.c,$(OBJ_DIR)/loaders/%.o,$(LOADER_SRC))
 RAST_OBJ = $(patsubst $(SRC_DIR)/rasterizer/%.c,$(OBJ_DIR)/rasterizer/%.o,$(RAST_SRC))
 UTIL_OBJ = $(patsubst $(SRC_DIR)/utils/%.c,$(OBJ_DIR)/utils/%.o,$(UTIL_SRC))
+PLATFORM_OBJ = $(patsubst $(SRC_DIR)/platform/%.c,$(OBJ_DIR)/platform/%.o,$(PLATFORM_SRC))
 
-ALL_OBJ = $(CORE_OBJ) $(LOADER_OBJ) $(RAST_OBJ) $(UTIL_OBJ)
+ALL_OBJ = $(CORE_OBJ) $(LOADER_OBJ) $(RAST_OBJ) $(UTIL_OBJ) $(PLATFORM_OBJ)
 
 # Examples
 DEMO_SRC = $(EXAMPLE_DIR)/demo.c
 DEMO_BIN = $(BUILD_DIR)/demo
 
+TUI_DEMO_SRC = $(EXAMPLE_DIR)/tui_demo.c
+TUI_DEMO_BIN = $(BUILD_DIR)/tui_demo
+
+PLATFORM_DEMO_SRC = $(EXAMPLE_DIR)/platform_demo.c
+PLATFORM_DEMO_BIN = $(BUILD_DIR)/platform_demo
+
 # Phony targets
-.PHONY: all clean dist install demo help
+.PHONY: all clean dist install demo tui platform examples help
 
 # Default target
 all: $(LIB_PATH)
 	@echo "✓ Build complete: $(LIB_PATH)"
 
 # Create directories
-$(OBJ_DIR)/core $(OBJ_DIR)/loaders $(OBJ_DIR)/rasterizer $(OBJ_DIR)/utils:
+$(OBJ_DIR)/core $(OBJ_DIR)/loaders $(OBJ_DIR)/rasterizer $(OBJ_DIR)/utils $(OBJ_DIR)/platform:
 	@mkdir -p $@
 
 $(DIST_DIR)/lib $(DIST_DIR)/include:
@@ -74,6 +82,11 @@ $(OBJ_DIR)/utils/%.o: $(SRC_DIR)/utils/%.c | $(OBJ_DIR)/utils
 	@echo "CC $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
+# Compile platform sources
+$(OBJ_DIR)/platform/%.o: $(SRC_DIR)/platform/%.c | $(OBJ_DIR)/platform
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
 # Create static library
 $(LIB_PATH): $(ALL_OBJ) | $(DIST_DIR)/lib $(DIST_DIR)/include
 	@echo "AR $(LIB_NAME)"
@@ -88,6 +101,29 @@ demo: $(LIB_PATH)
 	@$(CC) $(CFLAGS) $(DEMO_SRC) -o $(DEMO_BIN) -L$(DIST_DIR)/lib -lFontKit $(LDFLAGS)
 	@echo "✓ Demo built: $(DEMO_BIN)"
 	@echo "Run with: $(DEMO_BIN)"
+
+# Build TUI demo
+tui: $(LIB_PATH)
+	@echo "Building TUI demo..."
+	@$(CC) $(CFLAGS) $(TUI_DEMO_SRC) -o $(TUI_DEMO_BIN) -L$(DIST_DIR)/lib -lFontKit $(LDFLAGS)
+	@echo "✓ TUI Demo built: $(TUI_DEMO_BIN)"
+	@echo "Run with: $(TUI_DEMO_BIN)"
+
+# Build platform demo (Windows or Linux)
+platform: $(LIB_PATH)
+	@echo "Building platform demo..."
+ifeq ($(OS),Windows_NT)
+	@$(CC) $(CFLAGS) $(PLATFORM_DEMO_SRC) -o $(PLATFORM_DEMO_BIN).exe -L$(DIST_DIR)/lib -lFontKit -lgdi32 $(LDFLAGS)
+	@echo "✓ Platform Demo built: $(PLATFORM_DEMO_BIN).exe"
+else
+	@$(CC) $(CFLAGS) $(PLATFORM_DEMO_SRC) -o $(PLATFORM_DEMO_BIN) -L$(DIST_DIR)/lib -lFontKit -lX11 $(LDFLAGS)
+	@echo "✓ Platform Demo built: $(PLATFORM_DEMO_BIN)"
+endif
+	@echo "Run with: $(PLATFORM_DEMO_BIN)"
+
+# Build all examples
+examples: demo tui
+	@echo "✓ All examples built"
 
 # Create distribution package
 dist: $(LIB_PATH)
@@ -122,4 +158,20 @@ clean:
 
 # Help
 help:
-	@
+	@echo "FontKit Build System"
+	@echo "===================="
+	@echo ""
+	@echo "Targets:"
+	@echo "  make              - Build static library"
+	@echo "  make demo         - Build basic demo"
+	@echo "  make tui          - Build TUI demo"
+	@echo "  make examples     - Build all examples"
+	@echo "  make dist         - Create distribution package"
+	@echo "  make install      - Install to /usr/local (requires sudo)"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make help         - Show this help message"
+	@echo ""
+	@echo "Output:"
+	@echo "  Library: $(LIB_PATH)"
+	@echo "  Header:  $(DIST_DIR)/include/FontKit.h"
+	@echo ""

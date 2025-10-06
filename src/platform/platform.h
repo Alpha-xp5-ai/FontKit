@@ -4,7 +4,7 @@
 #ifndef FONTKIT_PLATFORM_H
 #define FONTKIT_PLATFORM_H
 
-#include "../../include/FontKit.h"
+#include "FontKit.h"
 
 /* Platform-specific surface for rendering */
 typedef struct FK_Surface FK_Surface;

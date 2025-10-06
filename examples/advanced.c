@@ -5,8 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define FONT_PATH "assets/fonts/truetype/Roboto-Regular.ttf"
+
 int main(int argc, char **argv) {
-    const char *font_path = FK_FONT_FAMILY_PRIMARY;
+    const char *font_path = FONT_PATH;
     const char *output_file = "output.ppm";
     int font_size = 48;
     
